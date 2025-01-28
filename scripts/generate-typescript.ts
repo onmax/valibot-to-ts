@@ -1,25 +1,30 @@
-import { toJsonSchema, } from '@valibot/to-json-schema';
-import { compile, JSONSchema } from 'json-schema-to-typescript';
-import { writeFileSync, mkdirSync, existsSync } from 'fs';
-import { dirname, resolve } from 'pathe';
-import { EventSchema, ProductSchema, SignUpSchema } from './schemas';
+import type { JSONSchema } from 'json-schema-to-typescript'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { toJsonSchema } from '@valibot/to-json-schema'
+import { compile } from 'json-schema-to-typescript'
+import { dirname, resolve } from 'pathe'
+import { intersect } from 'valibot'
+import { EventSchema, ProductSchema, SignUpSchema } from './schemas'
 
-const signUpSchema = toJsonSchema(SignUpSchema, { definitions: { SignUpSchema } }) as JSONSchema
-const productSchema = toJsonSchema(ProductSchema, { definitions: { ProductSchema } }) as JSONSchema
-const eventSchema = toJsonSchema(EventSchema, { definitions: { EventSchema } }) as JSONSchema
-
-const outputFolder = resolve(dirname('.'), './types');
-console.warn(`Generating TypeScript types to ${outputFolder}`);
-
-// Ensure the output folder exists
-if (!existsSync(outputFolder)) {
-  mkdirSync(outputFolder, { recursive: true });
+async function writeToFile(fileName: string, content: string) {
+  const path = dirname(fileName)
+  await mkdir(path, { recursive: true })
+  await writeFile(fileName, content) // Overwrites the file if it already exists
 }
 
-try {
-  compile(signUpSchema, "signup").then(ts => writeFileSync(resolve(outputFolder, "signup.ts"), ts));
-  compile(productSchema, "product").then(ts => writeFileSync(resolve(outputFolder, "product.ts"), ts));
-  compile(eventSchema, "event").then(ts => writeFileSync(resolve(outputFolder, "event.ts"), ts));
-} catch (err) {
-  console.error(err);
+const mergedSchema = toJsonSchema(intersect([SignUpSchema, ProductSchema, EventSchema]), { definitions: { SignUpSchema, ProductSchema, EventSchema } }) as JSONSchema
+
+async function writeSchemas() { // remove me if you don't need schemas
+  await writeToFile(resolve('schemas', 'json-schema.json'), JSON.stringify(mergedSchema, null, 2))
 }
+
+async function generateTs() {
+  const generated = await compile(mergedSchema, 'event')
+  const ts = generated.replace(/\/\*\*[\s\S]*?\*\//g, '')
+  await writeToFile(resolve('types', 'index.ts'), ts)
+}
+
+(async () => {
+  await writeSchemas()
+  await generateTs()
+})()
